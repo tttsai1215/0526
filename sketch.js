@@ -97,6 +97,14 @@ function draw() {
       strokeWeight(1);
       ellipse(pos.x, pos.y, 12, 12);
     }
+    
+    // 在地圖上顯示該站名
+    fill(0);
+    stroke(255);
+    strokeWeight(2);
+    textSize(12);
+    textAlign(CENTER, BOTTOM);
+    text(station.name, pos.x, pos.y - (isHover ? 14 : 8));
   }
   
   // 若有滑鼠懸停，顯示資料提示框 (Tooltip)
@@ -141,48 +149,43 @@ async function fetchRainData() {
   const taipeiApiUrl = 'https://wic.gov.taipei/OpenData/API/Rain/Get?stationNo=&loginId=open_rain&dataKey=85452C1D';
   const cwaApiUrl = 'https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0002-001?Authorization=rdec-key-123-45678-011121314';
 
-  try {
-    // 1. 取得中央氣象署的經緯度資料 (氣象署 API 本身已支援 CORS，直接呼叫即可)
-    let cwaRes = await fetch(cwaApiUrl);
-    if (!cwaRes.ok) throw new Error(`CWA API 狀態碼錯誤: ${cwaRes.status}`);
-    
-    let cwaText = await cwaRes.text();
-    let cwaJson;
-    try {
-      cwaJson = JSON.parse(cwaText);
-    } catch (e) {
-      throw new Error(`CWA API 回傳格式錯誤: ${cwaText.substring(0, 50)}...`);
-    }
+  let coordsDict = {};
 
-    let stationsCwa = (cwaJson && cwaJson.records) ? (cwaJson.records.Station || cwaJson.records.location || []) : [];
-    
-    // 建立一個對照字典，用測站名稱找出 CWA 提供的準確座標
-    let coordsDict = {};
-    for (let s of stationsCwa) {
-      // 確保只抓取「臺北市」的測站
-      let countyName = s.GeoInfo ? s.GeoInfo.CountyName : '';
-      // 舊版 API 格式相容
-      if (!countyName && s.parameter) {
-        let cityParam = s.parameter.find(p => p.parameterName === 'CITY');
-        if (cityParam) countyName = cityParam.parameterValue;
+  try {
+    // 1. 取得中央氣象署的經緯度資料 (加上獨立的 try-catch，防止氣象署伺服器異常導致整個程式當機)
+    try {
+      let cwaRes = await fetch(cwaApiUrl);
+      if (cwaRes.ok) {
+        let cwaText = await cwaRes.text();
+        let cwaJson = JSON.parse(cwaText);
+        let stationsCwa = (cwaJson && cwaJson.records) ? (cwaJson.records.Station || cwaJson.records.location || []) : [];
+        
+        // 建立一個對照字典，用測站名稱找出 CWA 提供的準確座標
+        for (let s of stationsCwa) {
+          // 確保只抓取「臺北市」的測站
+          let countyName = s.GeoInfo ? s.GeoInfo.CountyName : '';
+          if (!countyName && s.parameter) {
+            let cityParam = s.parameter.find(p => p.parameterName === 'CITY');
+            if (cityParam) countyName = cityParam.parameterValue;
+          }
+          if (normalizeName(countyName) !== '台北市') continue;
+          
+          let name = normalizeName(s.StationName || s.locationName);
+          let lat, lon;
+          // 解析 CWA 最新的 JSON 格式
+          if (s.GeoInfo && s.GeoInfo.Coordinates && s.GeoInfo.Coordinates.length > 0) {
+            let coord = s.GeoInfo.Coordinates.find(c => c.CoordinateName === 'WGS84') || s.GeoInfo.Coordinates[0];
+            lat = parseFloat(coord.StationLatitude);
+            lon = parseFloat(coord.StationLongitude);
+          } else {
+            lat = parseFloat(s.lat);
+            lon = parseFloat(s.lon);
+          }
+          coordsDict[name] = { lat, lon };
+        }
       }
-      if (normalizeName(countyName) !== '台北市') {
-        continue;
-      }
-      
-      let name = normalizeName(s.StationName || s.locationName);
-      let lat, lon;
-      // 解析 CWA 最新的 JSON 格式
-      if (s.GeoInfo && s.GeoInfo.Coordinates && s.GeoInfo.Coordinates.length > 0) {
-        let coord = s.GeoInfo.Coordinates.find(c => c.CoordinateName === 'WGS84') || s.GeoInfo.Coordinates[0];
-        lat = parseFloat(coord.StationLatitude);
-        lon = parseFloat(coord.StationLongitude);
-      } else {
-        // 舊版格式相容
-        lat = parseFloat(s.lat);
-        lon = parseFloat(s.lon);
-      }
-      coordsDict[name] = { lat, lon };
+    } catch (e) {
+      console.warn('氣象署 API 抓取失敗，將只使用自訂與預設的台北市座標:', e);
     }
 
     // 2. 取得台北市即時雨量資料 (需透過 Proxy 避開 CORS)
