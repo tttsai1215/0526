@@ -2,6 +2,7 @@ let myMap;
 let canvas;
 let rainData = [];
 let mappa;
+let hoveredListItem = null; // 紀錄左側清單被滑鼠移過的測站
 
 // 地圖初始設定
 const options = {
@@ -65,9 +66,15 @@ function setup() {
   hud.style('z-index', '9999'); // 確保在最上層
   hud.style('pointer-events', 'none'); // 讓滑鼠可以穿透，不影響拖曳地圖
   
-  let legend = createDiv("<b>圖例說明</b><br>🔵 藍色漣漪：有雨 (越大代表雨量越多)<br>🔴 紅色圓點：無雨");
+  let legend = createDiv(
+    "<b>降雨量顏色區分</b><br>" +
+    "🔴 🔴 紅色：> 40mm (大雨)<br>" +
+    "🟠 🟠 橘色：10 - 40mm (中雨)<br>" +
+    "🔵 🔵 藍色：0.1 - 10mm (小雨)<br>" +
+    "⚪ ⚪ 灰色：0mm (無雨)"
+  );
   legend.style('position', 'absolute');
-  legend.style('left', '20px');
+  legend.style('right', '20px');
   legend.style('bottom', '30px');
   legend.style('background', 'rgba(0,0,0,0.7)');
   legend.style('color', 'white');
@@ -95,6 +102,9 @@ function draw() {
     return;
   }
   
+  // 繪製右上角天氣動畫 (大太陽 / 下雨)
+  drawWeatherEffect();
+
   let hoveredStation = null;
   
   // 繪製雨量點
@@ -115,6 +125,24 @@ function draw() {
     let baseSize = 12;
     let pulse = 0;
     
+    // 依據你的需求自訂的顏色區分
+    let dotColor, strokeColor;
+    if (rainAmount > 40) {
+      dotColor = color(255, 50, 50, 200); // 紅色 (大雨)
+      strokeColor = color(255, 200, 200);
+    } else if (rainAmount > 10) {
+      dotColor = color(255, 150, 0, 200); // 橘色 (中雨)
+      strokeColor = color(255, 220, 150);
+    } else if (rainAmount > 0) {
+      dotColor = color(0, 150, 255, 200); // 藍色 (小雨)
+      strokeColor = color(200, 230, 255);
+    } else {
+      dotColor = color(150, 150, 150, 150); // 灰色/白色系 (無雨)
+      strokeColor = color(240);
+    }
+
+    let isListHover = (hoveredListItem === station.name);
+
     // 有雨時的明顯特效：放大 + 動態外擴漣漪
     if (rainAmount > 0) {
       baseSize = map(rainAmount, 0, 50, 15, 45); // 依雨量放大
@@ -125,32 +153,35 @@ function draw() {
       let rippleSize = baseSize + (frameCount % 60) * 1.5;
       let rippleAlpha = map(frameCount % 60, 0, 60, 200, 0);
       noFill();
-      stroke(0, 150, 255, rippleAlpha);
+      stroke(red(dotColor), green(dotColor), blue(dotColor), rippleAlpha);
       strokeWeight(3);
       ellipse(pos.x, pos.y, rippleSize, rippleSize);
     }
     
     let finalSize = baseSize + pulse;
     
-    // 圓點樣式
-    if (isHover) {
+    // 圓點樣式判定
+    if (isListHover) {
+      // 游標在左側面板對應站名上，極度放大與強調
+      fill(255, 255, 0);
+      stroke(255);
+      strokeWeight(4);
+      finalSize += 25; // 加大直徑
+      pulse += sin(frameCount * 0.3) * 6; // 增加脈動
+      hoveredStation = { data: station, pos: pos }; // 同時觸發資料框顯示
+    } else if (isHover) {
       fill(255, 200, 0); 
       stroke(255);
       strokeWeight(3);
-      ellipse(pos.x, pos.y, finalSize + 8, finalSize + 8); // 游標移上時放大
+      finalSize += 8; // 游標移上地圖圓點時放大
     } else {
-      if (rainAmount > 0) {
-        fill(0, 150, 255, 180); // 有下雨的樣式（藍色半透明）
-        stroke(255);
-        strokeWeight(2);
-      } else {
-        fill(255, 0, 0, 180); // 沒下雨的樣式（預設紅色）
-        stroke(255);
-        strokeWeight(1.5);
-      }
-      ellipse(pos.x, pos.y, finalSize, finalSize);
+      fill(dotColor);
+      stroke(strokeColor);
+      strokeWeight(rainAmount > 0 ? 2 : 1.5);
     }
     
+    ellipse(pos.x, pos.y, finalSize, finalSize);
+
     // 在地圖上顯示該站名 (加上白邊黑字，更清晰)
     fill(0);
     stroke(255);
@@ -175,9 +206,10 @@ function draw() {
     
     let boxW = 160;
     let boxH = 65;
-    // 改為跟隨滑鼠位置，避免圓點太大時卡擋住提示框
-    let boxX = mouseX + 15;
-    let boxY = mouseY + 15;
+    
+    // 若是透過滑鼠直接互動則跟隨滑鼠；若是透過左側清單 Hover 則顯示在圓點旁
+    let boxX = (mouseX > 260 && !hoveredListItem) ? mouseX + 15 : p.x + 20; 
+    let boxY = (mouseX > 260 && !hoveredListItem) ? mouseY + 15 : p.y - boxH / 2;
     
     // 確保提示框不會超出視窗右側或下方邊界
     if (boxX + boxW > width) boxX = mouseX - boxW - 15;
@@ -203,6 +235,103 @@ function draw() {
     textStyle(BOLD);
     text(info, boxX + 10, boxY + 10);
     pop();
+  }
+}
+
+// 繪製右上角天氣特效
+function drawWeatherEffect() {
+  let maxRain = 0;
+  if (rainData && rainData.length > 0) {
+    maxRain = Math.max(...rainData.map(d => d.rain));
+  }
+  
+  let wx = width - 100;
+  let wy = 120; // 在 HUD 資訊的下方
+  
+  push();
+  translate(wx, wy);
+  if (maxRain === 0) {
+    // 大太陽
+    noStroke();
+    fill(255, 204, 0, 200);
+    push();
+    rotate(frameCount * 0.02);
+    for (let i = 0; i < 8; i++) {
+      ellipse(0, 30, 8, 20);
+      rotate(PI / 4);
+    }
+    pop();
+    fill(255, 204, 0);
+    circle(0, 0, 45);
+  } else {
+    // 烏雲與下雨效果
+    noStroke();
+    fill(180, 180, 180, 220);
+    ellipse(0, -10, 70, 35);
+    ellipse(-25, -5, 50, 30);
+    ellipse(25, -5, 50, 30);
+    
+    stroke(100, 200, 255, 180);
+    strokeWeight(2);
+    let rainDrops = (frameCount * 6) % 40;
+    for(let i = 0; i < 5; i++){
+       let rx = -25 + i * 12;
+       let ry = ((rainDrops + i * 9) % 40);
+       line(rx, ry, rx - 4, ry + 12);
+    }
+  }
+  pop();
+}
+
+// 建立左側面板
+function buildSidePanel() {
+  let oldPanel = document.getElementById('side-panel');
+  if (oldPanel) oldPanel.remove();
+
+  let sidePanel = createDiv();
+  sidePanel.id('side-panel');
+  sidePanel.style('position', 'absolute');
+  sidePanel.style('left', '20px');
+  sidePanel.style('top', '20px');
+  sidePanel.style('bottom', '20px');
+  sidePanel.style('width', '240px');
+  sidePanel.style('background', 'rgba(0, 0, 0, 0.75)');
+  sidePanel.style('color', 'white');
+  sidePanel.style('overflow-y', 'auto');
+  sidePanel.style('border-radius', '8px');
+  sidePanel.style('z-index', '9999');
+  sidePanel.style('padding', '15px');
+  sidePanel.style('box-sizing', 'border-box');
+  sidePanel.style('box-shadow', '3px 3px 10px rgba(0,0,0,0.5)');
+
+  let title = createDiv('<h3>北市測站雨量列表</h3>');
+  title.style('margin-top', '0');
+  title.style('border-bottom', '1px solid #777');
+  title.style('padding-bottom', '10px');
+  title.parent(sidePanel);
+  
+  // 依雨量大小排序
+  let sortedData = [...rainData].sort((a, b) => b.rain - a.rain);
+  
+  for (let st of sortedData) {
+    let item = createDiv(`<b>${st.name}</b> : ${st.rain} mm`);
+    item.style('padding', '10px 5px');
+    item.style('border-bottom', '1px solid #444');
+    item.style('cursor', 'pointer');
+    item.style('transition', 'background 0.2s, padding-left 0.2s');
+    
+    item.mouseOver(() => {
+      item.style('background', 'rgba(255, 255, 255, 0.2)');
+      item.style('padding-left', '15px'); // Hover 時稍微向右縮排
+      hoveredListItem = st.name;
+    });
+    item.mouseOut(() => {
+      item.style('background', 'transparent');
+      item.style('padding-left', '5px');
+      if (hoveredListItem === st.name) hoveredListItem = null;
+    });
+    
+    item.parent(sidePanel);
   }
 }
 
@@ -321,6 +450,7 @@ async function fetchRainData() {
       }
     }
     console.log('資料載入與合併成功:', rainData);
+    buildSidePanel(); // 資料合併完成後呼叫建立側邊欄
   } catch (error) {
     console.error('抓取 API 資料時發生錯誤:', error);
   }
