@@ -1,9 +1,26 @@
 let rainData = null;
 let scrollY = 0; // 用於滾動畫面顯示大量資料
 
+let mappa;
+let myMap;
+let canvas;
+
+const options = {
+  lat: 25.0478, // 台北市中心緯度
+  lng: 121.5319, // 台北市中心經度
+  zoom: 12,
+  style: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" // 使用 OpenStreetMap 圖資
+};
+
 function setup() {
   // 採用全螢幕畫布
-  createCanvas(windowWidth, windowHeight);
+  canvas = createCanvas(windowWidth, windowHeight);
+  
+  // 初始化 Mappa 並使用 Leaflet 作為地圖引擎
+  mappa = new Mappa('Leaflet');
+  myMap = mappa.tileMap(options);
+  myMap.overlay(canvas); // 將 p5.js 畫布疊加在地圖上
+
   textSize(16);
   textAlign(LEFT, TOP);
   
@@ -12,8 +29,11 @@ function setup() {
 }
 
 function draw() {
-  background(30);
-  fill(255);
+  // 清除背景，變成透明以顯示底層的地圖
+  clear();
+  fill(0); // 文字設為黑色
+  stroke(255); // 加上白色邊框，讓文字在地圖上更清晰
+  strokeWeight(2);
   
   if (!rainData) {
     text("資料載入中，請稍候...", 20, 20);
@@ -49,8 +69,9 @@ function draw() {
 async function fetchRainData() {
   const apiUrl = 'https://wic.gov.taipei/OpenData/API/Rain/Get?stationNo=&loginId=open_rain&dataKey=85452C1D';
   
-  // 在程式碼內設定代理伺服器 (Proxy)，使用 corsproxy.io 來繞過 localhost 的 CORS 限制
-  const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(apiUrl);
+  // 使用公共的 CORS 代理伺服器 (CORS Proxy)
+  // 代理伺服器會幫你去台北市政府的 API 拿取資料（伺服器對伺服器不會有 CORS 限制），然後再加上 Access-Control-Allow-Origin: * 的標頭，把資料回傳給你的瀏覽器。
+  const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(apiUrl);
   
   try {
     const response = await fetch(proxyUrl, { method: 'GET' });
@@ -70,4 +91,3 @@ function mouseWheel(event) {
   scrollY -= event.delta;
   if (scrollY > 0) scrollY = 0;
 }
-
