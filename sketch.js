@@ -14,10 +14,15 @@ const options = {
 function setup() {
   canvas = createCanvas(windowWidth, windowHeight);
   
-  // 【重點修正】避開 Mappa.js 0.0.4/0.0.5 的 Bug
-  // 強制清除殘留的 L (Leaflet) 變數，讓 Mappa 自己重新建立並載入 Leaflet
+  // 【終極修正】避開 Mappa.js 配合 Live Server 熱重載時的致命 Bug
+  // 1. 強制清除殘留的 L 變數
   if (window.L) {
     window.L = undefined;
+  }
+  // 2. 強制移除殘留的 leaflet 腳本標籤，防止 Mappa 找到舊標籤卻又對空變數呼叫 onload
+  let oldScript = document.getElementById('leaflet');
+  if (oldScript) {
+    oldScript.remove();
   }
   
   // 初始化 Mappa
