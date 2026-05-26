@@ -4,6 +4,10 @@ let rainData = [];
 let mappa;
 let hoveredListItem = null; // 紀錄左側清單被滑鼠移過的測站
 
+let isPanelCollapsed = false; // 紀錄側邊面板是否收合
+let updateTimeStr = "載入中..."; // 紀錄資料更新時間
+let hud; // 右上角資訊面板
+
 // 地圖初始設定
 const options = {
   lat: 25.0330,
@@ -54,27 +58,29 @@ function setup() {
   }
   
   // 建立浮動在畫面上方的 UI (使用 HTML 元素，完全不受地圖縮放、拖曳影響)
-  let hud = createDiv("臺北市即時雨量地圖<br><span style='font-size:18px;'>414730134 蔡忞序</span>");
+  hud = createDiv();
   hud.style('position', 'absolute');
   hud.style('right', '20px');
   hud.style('top', '20px');
   hud.style('color', '#FFD700'); // 金黃色
-  hud.style('font-size', '26px');
-  hud.style('font-weight', 'bold');
   hud.style('text-shadow', '2px 2px 5px rgba(0,0,0,0.9)');
   hud.style('text-align', 'right');
   hud.style('z-index', '9999'); // 確保在最上層
   hud.style('pointer-events', 'none'); // 讓滑鼠可以穿透，不影響拖曳地圖
+  updateHUD(); // 呼叫函式更新內容
   
   let legend = createDiv(
     "<b>降雨量顏色區分</b><br>" +
-    "🔴 🔴 紅色：> 40mm (大雨)<br>" +
-    "🟠 🟠 橘色：10 - 40mm (中雨)<br>" +
-    "🔵 🔵 藍色：0.1 - 10mm (小雨)<br>" +
-    "⚪ ⚪ 灰色：0mm (無雨)"
+    " 🟣 紫色：> 70mm (大豪雨)<br>" +
+    "🔴 🔴 紅色：40 - 70mm (豪雨)<br>" +
+    "🟠 🟠 橘色：20 - 40mm (大雨)<br>" +
+    "🟢 🟢 綠色：10 - 20mm (中雨)<br>" +
+    "🔵 🔵 藍色：2 - 10mm (小雨)<br>" +
+    "💧 💧 淺藍：0.1 - 2mm (微雨)<br>" +
+    "🌞 🌞 太陽黃：0mm (無雨)"
   );
   legend.style('position', 'absolute');
-  legend.style('right', '20px');
+  legend.style('right', '20px'); 
   legend.style('bottom', '30px');
   legend.style('background', 'rgba(0,0,0,0.7)');
   legend.style('color', 'white');
@@ -125,20 +131,29 @@ function draw() {
     let baseSize = 12;
     let pulse = 0;
     
-    // 依據你的需求自訂的顏色區分
+    // 依據你的需求自訂的顏色區分 (擴增至7個層級)
     let dotColor, strokeColor;
-    if (rainAmount > 40) {
-      dotColor = color(255, 50, 50, 200); // 紅色 (大雨)
+    if (rainAmount > 70) {
+      dotColor = color(150, 0, 255, 200); // 紫色 (大豪雨)
+      strokeColor = color(220, 180, 255);
+    } else if (rainAmount > 40) {
+      dotColor = color(255, 50, 50, 200); // 紅色 (豪雨)
       strokeColor = color(255, 200, 200);
-    } else if (rainAmount > 10) {
-      dotColor = color(255, 150, 0, 200); // 橘色 (中雨)
+    } else if (rainAmount > 20) {
+      dotColor = color(255, 150, 0, 200); // 橘色 (大雨)
       strokeColor = color(255, 220, 150);
+    } else if (rainAmount > 10) {
+      dotColor = color(0, 200, 100, 200); // 綠色 (中雨)
+      strokeColor = color(150, 255, 200);
+    } else if (rainAmount > 2) {
+      dotColor = color(0, 100, 255, 200); // 藍色 (小雨)
+      strokeColor = color(150, 200, 255);
     } else if (rainAmount > 0) {
-      dotColor = color(0, 150, 255, 200); // 藍色 (小雨)
-      strokeColor = color(200, 230, 255);
+      dotColor = color(135, 206, 250, 200); // 淺藍色 (微雨)
+      strokeColor = color(220, 240, 255);
     } else {
-      dotColor = color(150, 150, 150, 150); // 灰色/白色系 (無雨)
-      strokeColor = color(240);
+      dotColor = color(255, 220, 0, 200); // 太陽黃色 (無雨)
+      strokeColor = color(255, 255, 200);
     }
 
     let isListHover = (hoveredListItem === station.name);
@@ -238,6 +253,15 @@ function draw() {
   }
 }
 
+// 更新右上角文字與時間
+function updateHUD() {
+  if(hud) {
+    hud.html(`<div style='font-size:26px; font-weight:bold;'>臺北市即時雨量地圖</div>
+              <div style='font-size:18px;'>414730134 蔡忞序</div>
+              <div style='font-size:14px; color:#EEE; margin-top:5px;'>資料更新時間: ${updateTimeStr}</div>`);
+  }
+}
+
 // 繪製右上角天氣特效
 function drawWeatherEffect() {
   let maxRain = 0;
@@ -287,15 +311,20 @@ function drawWeatherEffect() {
 function buildSidePanel() {
   let oldPanel = document.getElementById('side-panel');
   if (oldPanel) oldPanel.remove();
+  let oldBtn = document.getElementById('toggle-btn');
+  if (oldBtn) oldBtn.remove();
 
   let sidePanel = createDiv();
   sidePanel.id('side-panel');
   sidePanel.style('position', 'absolute');
-  sidePanel.style('left', '20px');
+  // 收合/展開的 CSS 動畫設定
+  sidePanel.style('transition', 'transform 0.3s ease-in-out');
+  sidePanel.style('left', '10px');
   sidePanel.style('top', '20px');
   sidePanel.style('bottom', '20px');
   sidePanel.style('width', '240px');
   sidePanel.style('background', 'rgba(0, 0, 0, 0.75)');
+  sidePanel.style('backdrop-filter', 'blur(5px)'); // 毛玻璃質感
   sidePanel.style('color', 'white');
   sidePanel.style('overflow-y', 'auto');
   sidePanel.style('border-radius', '8px');
@@ -303,6 +332,32 @@ function buildSidePanel() {
   sidePanel.style('padding', '15px');
   sidePanel.style('box-sizing', 'border-box');
   sidePanel.style('box-shadow', '3px 3px 10px rgba(0,0,0,0.5)');
+  
+  if (isPanelCollapsed) sidePanel.style('transform', 'translateX(-260px)');
+
+  // 建立收合按鈕
+  let toggleBtn = createButton(isPanelCollapsed ? '▶ 展開' : '◀ 收合列表');
+  toggleBtn.id('toggle-btn');
+  toggleBtn.style('position', 'absolute');
+  toggleBtn.style('left', '250px');
+  toggleBtn.style('top', '20px');
+  toggleBtn.style('z-index', '9999');
+  toggleBtn.style('padding', '8px 12px');
+  toggleBtn.style('background', 'rgba(0, 0, 0, 0.75)');
+  toggleBtn.style('color', 'white');
+  toggleBtn.style('border', '1px solid #777');
+  toggleBtn.style('border-left', 'none');
+  toggleBtn.style('border-radius', '0 8px 8px 0');
+  toggleBtn.style('cursor', 'pointer');
+  toggleBtn.style('transition', 'transform 0.3s ease-in-out');
+  if (isPanelCollapsed) toggleBtn.style('transform', 'translateX(-250px)');
+  
+  toggleBtn.mousePressed(() => {
+    isPanelCollapsed = !isPanelCollapsed;
+    sidePanel.style('transform', isPanelCollapsed ? 'translateX(-260px)' : 'translateX(0px)');
+    toggleBtn.style('transform', isPanelCollapsed ? 'translateX(-250px)' : 'translateX(0px)');
+    toggleBtn.html(isPanelCollapsed ? '▶ 展開' : '◀ 收合列表');
+  });
 
   let title = createDiv('<h3>北市測站雨量列表</h3>');
   title.style('margin-top', '0');
@@ -319,6 +374,12 @@ function buildSidePanel() {
     item.style('border-bottom', '1px solid #444');
     item.style('cursor', 'pointer');
     item.style('transition', 'background 0.2s, padding-left 0.2s');
+    
+    // 依照雨量改變文字顏色，增加辨識度
+    if (st.rain > 40) item.style('color', '#FF6666');
+    else if (st.rain > 10) item.style('color', '#66FF66');
+    else if (st.rain > 0) item.style('color', '#66CCFF');
+    else item.style('color', '#FFD700');
     
     item.mouseOver(() => {
       item.style('background', 'rgba(255, 255, 255, 0.2)');
@@ -415,6 +476,16 @@ async function fetchRainData() {
     if (!tpeJson) throw new Error("所有代理伺服器皆無法抓取台北市 API。");
 
     let stationsTpe = Array.isArray(tpeJson) ? tpeJson : (tpeJson.data || tpeJson.list || []);
+
+    // 擷取資料時間
+    if (stationsTpe.length > 0 && stationsTpe[0].recTime) {
+      // API 若提供 '2024-05-26T12:00:00' 格式，將 T 替換為空格
+      updateTimeStr = stationsTpe[0].recTime.replace('T', ' ');
+    } else {
+      let now = new Date();
+      updateTimeStr = now.toLocaleString('zh-TW', { hour12: false });
+    }
+    updateHUD(); // 更新畫面上的時間顯示
 
     // 3. 根據測站名稱合併資料
     rainData = [];
