@@ -149,6 +149,9 @@ async function fetchRainData() {
   try {
     // 1. 取得中央氣象署的經緯度資料
     let cwaRes = await fetch(proxyCwa);
+    if (!cwaRes.ok) {
+      throw new Error(`CWA API 請求失敗 (狀態碼: ${cwaRes.status})`);
+    }
     let cwaJson = await cwaRes.json();
     let stationsCwa = (cwaJson && cwaJson.records) ? (cwaJson.records.Station || cwaJson.records.location || []) : [];
     
@@ -183,6 +186,12 @@ async function fetchRainData() {
 
     // 2. 取得台北市即時雨量資料
     let tpeRes = await fetch(proxyTaipei);
+    if (!tpeRes.ok) {
+      console.warn(`主要代理伺服器失敗 (狀態碼: ${tpeRes.status})，嘗試使用備用伺服器...`);
+      // 遇到 408 Timeout 或其他錯誤時，嘗試使用備用的 allorigins 代理伺服器
+      tpeRes = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(taipeiApiUrl));
+      if (!tpeRes.ok) throw new Error(`台北市 API 請求失敗 (狀態碼: ${tpeRes.status})`);
+    }
     let tpeJson = await tpeRes.json();
     let stationsTpe = Array.isArray(tpeJson) ? tpeJson : (tpeJson.data || tpeJson.list || []);
 
