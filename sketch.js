@@ -52,6 +52,32 @@ function setup() {
     oldScript.remove();
   }
   
+  // 建立浮動在畫面上方的 UI (使用 HTML 元素，完全不受地圖縮放、拖曳影響)
+  let hud = createDiv("臺北市即時雨量地圖<br><span style='font-size:18px;'>414730134 蔡忞序</span>");
+  hud.style('position', 'absolute');
+  hud.style('right', '20px');
+  hud.style('top', '20px');
+  hud.style('color', '#FFD700'); // 金黃色
+  hud.style('font-size', '26px');
+  hud.style('font-weight', 'bold');
+  hud.style('text-shadow', '2px 2px 5px rgba(0,0,0,0.9)');
+  hud.style('text-align', 'right');
+  hud.style('z-index', '9999'); // 確保在最上層
+  hud.style('pointer-events', 'none'); // 讓滑鼠可以穿透，不影響拖曳地圖
+  
+  let legend = createDiv("<b>圖例說明</b><br>🔵 藍色漣漪：有雨 (越大代表雨量越多)<br>🔴 紅色圓點：無雨");
+  legend.style('position', 'absolute');
+  legend.style('left', '20px');
+  legend.style('bottom', '30px');
+  legend.style('background', 'rgba(0,0,0,0.7)');
+  legend.style('color', 'white');
+  legend.style('padding', '10px 15px');
+  legend.style('border-radius', '8px');
+  legend.style('font-size', '15px');
+  legend.style('line-height', '1.6');
+  legend.style('z-index', '9999');
+  legend.style('pointer-events', 'none');
+
   // 初始化 Mappa
   mappa = new Mappa('Leaflet');
   myMap = mappa.tileMap(options);
@@ -69,17 +95,6 @@ function draw() {
     return;
   }
   
-  // 在右上角加上學號與姓名
-  push();
-  fill(255, 220, 0); // 金黃色
-  stroke(0);
-  strokeWeight(3);
-  textSize(24);
-  textStyle(BOLD);
-  textAlign(RIGHT, TOP);
-  text("414730134 蔡忞序", width - 20, 20);
-  pop();
-
   let hoveredStation = null;
   
   // 繪製雨量點
@@ -96,15 +111,23 @@ function draw() {
       hoveredStation = { data: station, pos: pos };
     }
     
-    let rainAmount = station.rain;
-    let pulse = 0;
+    let rainAmount = parseFloat(station.rain || 0);
     let baseSize = 12;
+    let pulse = 0;
     
-    // 依據雨量改變大小與顏色，並加上呼吸燈特效
+    // 有雨時的明顯特效：放大 + 動態外擴漣漪
     if (rainAmount > 0) {
-      pulse = sin(frameCount * 0.1) * 4; // 呼吸燈縮放
-      baseSize = map(rainAmount, 0, 50, 15, 40); // 依雨量放大
+      baseSize = map(rainAmount, 0, 50, 15, 45); // 依雨量放大
       baseSize = constrain(baseSize, 15, 60);
+      pulse = sin(frameCount * 0.1) * 4; // 呼吸燈縮放
+      
+      // 繪製藍色擴散漣漪
+      let rippleSize = baseSize + (frameCount % 60) * 1.5;
+      let rippleAlpha = map(frameCount % 60, 0, 60, 200, 0);
+      noFill();
+      stroke(0, 150, 255, rippleAlpha);
+      strokeWeight(3);
+      ellipse(pos.x, pos.y, rippleSize, rippleSize);
     }
     
     let finalSize = baseSize + pulse;
@@ -112,29 +135,30 @@ function draw() {
     // 圓點樣式
     if (isHover) {
       fill(255, 200, 0); 
-      stroke(200, 100, 0);
-      strokeWeight(2);
+      stroke(255);
+      strokeWeight(3);
       ellipse(pos.x, pos.y, finalSize + 8, finalSize + 8); // 游標移上時放大
     } else {
       if (rainAmount > 0) {
         fill(0, 150, 255, 180); // 有下雨的樣式（藍色半透明）
         stroke(255);
-        strokeWeight(1.5);
+        strokeWeight(2);
       } else {
         fill(255, 0, 0, 180); // 沒下雨的樣式（預設紅色）
         stroke(255);
-        strokeWeight(1);
+        strokeWeight(1.5);
       }
       ellipse(pos.x, pos.y, finalSize, finalSize);
     }
     
-    // 在地圖上顯示該站名
+    // 在地圖上顯示該站名 (加上白邊黑字，更清晰)
     fill(0);
     stroke(255);
-    strokeWeight(2);
-    textSize(12);
+    strokeWeight(3);
+    textSize(13);
+    textStyle(BOLD);
     textAlign(CENTER, BOTTOM);
-    text(station.name, pos.x, pos.y - (finalSize / 2 + (isHover ? 6 : 2)));
+    text(station.name, pos.x, pos.y - (finalSize / 2 + (isHover ? 8 : 4)));
   }
   
   // 若有滑鼠懸停，顯示資料提示框 (Tooltip)
@@ -144,25 +168,26 @@ function draw() {
     let info = `測站: ${s.name}\n雨量: ${s.rain} mm\n座標: ${s.lat.toFixed(3)}, ${s.lng.toFixed(3)}`;
     
     push();
-    fill(0, 200); // 半透明黑色背景
+    fill(0, 220); // 加深半透明黑色背景
     stroke(255, 200); // 邊框改為淡白色
-    strokeWeight(1);
+    strokeWeight(2);
     rectMode(CORNER);
     
     let boxW = 160;
     let boxH = 65;
-    let boxX = p.x + 15;
-    let boxY = p.y - boxH - 10;
+    // 改為跟隨滑鼠位置，避免圓點太大時卡擋住提示框
+    let boxX = mouseX + 15;
+    let boxY = mouseY + 15;
     
-    // 確保提示框不會超出視窗右側或上方邊界
-    if (boxX + boxW > width) boxX = p.x - boxW - 15;
-    if (boxY < 0) boxY = p.y + 15;
+    // 確保提示框不會超出視窗右側或下方邊界
+    if (boxX + boxW > width) boxX = mouseX - boxW - 15;
+    if (boxY + boxH > height) boxY = mouseY - boxH - 15;
     
-    // 增加提示框的陰影質感
-    drawingContext.shadowOffsetX = 3;
-    drawingContext.shadowOffsetY = 3;
-    drawingContext.shadowBlur = 5;
-    drawingContext.shadowColor = 'rgba(0,0,0,0.5)';
+    // 增加提示框的陰影質感，讓它看起來像浮起來的卡片
+    drawingContext.shadowOffsetX = 4;
+    drawingContext.shadowOffsetY = 4;
+    drawingContext.shadowBlur = 8;
+    drawingContext.shadowColor = 'rgba(0,0,0,0.6)';
     
     rect(boxX, boxY, boxW, boxH, 8);
     
