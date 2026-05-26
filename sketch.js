@@ -68,6 +68,17 @@ function draw() {
     text("資料載入與合併中，請稍候...", 20, 20);
     return;
   }
+  
+  // 在右上角加上學號與姓名
+  push();
+  fill(255, 220, 0); // 金黃色
+  stroke(0);
+  strokeWeight(3);
+  textSize(24);
+  textStyle(BOLD);
+  textAlign(RIGHT, TOP);
+  text("414730134 蔡忞序", width - 20, 20);
+  pop();
 
   let hoveredStation = null;
   
@@ -85,17 +96,36 @@ function draw() {
       hoveredStation = { data: station, pos: pos };
     }
     
-    // 圓點樣式：採用紅色的圓標示該點
+    let rainAmount = station.rain;
+    let pulse = 0;
+    let baseSize = 12;
+    
+    // 依據雨量改變大小與顏色，並加上呼吸燈特效
+    if (rainAmount > 0) {
+      pulse = sin(frameCount * 0.1) * 4; // 呼吸燈縮放
+      baseSize = map(rainAmount, 0, 50, 15, 40); // 依雨量放大
+      baseSize = constrain(baseSize, 15, 60);
+    }
+    
+    let finalSize = baseSize + pulse;
+    
+    // 圓點樣式
     if (isHover) {
-      fill(255, 100, 100); 
-      stroke(200, 0, 0);
+      fill(255, 200, 0); 
+      stroke(200, 100, 0);
       strokeWeight(2);
-      ellipse(pos.x, pos.y, 20, 20); // 游標移上時放大
+      ellipse(pos.x, pos.y, finalSize + 8, finalSize + 8); // 游標移上時放大
     } else {
-      fill(255, 0, 0, 180); // 預設紅色圓點
-      stroke(255);
-      strokeWeight(1);
-      ellipse(pos.x, pos.y, 12, 12);
+      if (rainAmount > 0) {
+        fill(0, 150, 255, 180); // 有下雨的樣式（藍色半透明）
+        stroke(255);
+        strokeWeight(1.5);
+      } else {
+        fill(255, 0, 0, 180); // 沒下雨的樣式（預設紅色）
+        stroke(255);
+        strokeWeight(1);
+      }
+      ellipse(pos.x, pos.y, finalSize, finalSize);
     }
     
     // 在地圖上顯示該站名
@@ -104,7 +134,7 @@ function draw() {
     strokeWeight(2);
     textSize(12);
     textAlign(CENTER, BOTTOM);
-    text(station.name, pos.x, pos.y - (isHover ? 14 : 8));
+    text(station.name, pos.x, pos.y - (finalSize / 2 + (isHover ? 6 : 2)));
   }
   
   // 若有滑鼠懸停，顯示資料提示框 (Tooltip)
@@ -114,8 +144,8 @@ function draw() {
     let info = `測站: ${s.name}\n雨量: ${s.rain} mm\n座標: ${s.lat.toFixed(3)}, ${s.lng.toFixed(3)}`;
     
     push();
-    fill(255, 240);
-    stroke(0);
+    fill(0, 200); // 半透明黑色背景
+    stroke(255, 200); // 邊框改為淡白色
     strokeWeight(1);
     rectMode(CORNER);
     
@@ -128,9 +158,20 @@ function draw() {
     if (boxX + boxW > width) boxX = p.x - boxW - 15;
     if (boxY < 0) boxY = p.y + 15;
     
+    // 增加提示框的陰影質感
+    drawingContext.shadowOffsetX = 3;
+    drawingContext.shadowOffsetY = 3;
+    drawingContext.shadowBlur = 5;
+    drawingContext.shadowColor = 'rgba(0,0,0,0.5)';
+    
     rect(boxX, boxY, boxW, boxH, 8);
     
-    fill(0);
+    // 取消陰影以免影響文字
+    drawingContext.shadowOffsetX = 0;
+    drawingContext.shadowOffsetY = 0;
+    drawingContext.shadowBlur = 0;
+    
+    fill(255); // 字體改為白色
     noStroke();
     textAlign(LEFT, TOP);
     textSize(14);
