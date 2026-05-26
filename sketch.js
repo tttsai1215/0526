@@ -140,19 +140,20 @@ function normalizeName(name) {
 async function fetchRainData() {
   const taipeiApiUrl = 'https://wic.gov.taipei/OpenData/API/Rain/Get?stationNo=&loginId=open_rain&dataKey=85452C1D';
   const cwaApiUrl = 'https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0002-001?Authorization=rdec-key-123-45678-011121314';
-  
-  // 台北市 API 需要透過 Proxy 避開 CORS 限制 (改用 corsproxy.io)
-  const proxyTaipei = 'https://corsproxy.io/?' + encodeURIComponent(taipeiApiUrl);
-  // 氣象署 API 本身已支援 CORS，可直接呼叫，不需 Proxy！
-  const proxyCwa = cwaApiUrl;
 
   try {
-    // 1. 取得中央氣象署的經緯度資料
-    let cwaRes = await fetch(proxyCwa);
-    if (!cwaRes.ok) {
-      throw new Error(`CWA API 請求失敗 (狀態碼: ${cwaRes.status})`);
+    // 1. 取得中央氣象署的經緯度資料 (氣象署 API 本身已支援 CORS，直接呼叫即可)
+    let cwaRes = await fetch(cwaApiUrl);
+    if (!cwaRes.ok) throw new Error(`CWA API 狀態碼錯誤: ${cwaRes.status}`);
+    
+    let cwaText = await cwaRes.text();
+    let cwaJson;
+    try {
+      cwaJson = JSON.parse(cwaText);
+    } catch (e) {
+      throw new Error(`CWA API 回傳格式錯誤: ${cwaText.substring(0, 50)}...`);
     }
-    let cwaJson = await cwaRes.json();
+
     let stationsCwa = (cwaJson && cwaJson.records) ? (cwaJson.records.Station || cwaJson.records.location || []) : [];
     
     // 建立一個對照字典，用測站名稱找出 CWA 提供的準確座標
@@ -184,15 +185,37 @@ async function fetchRainData() {
       coordsDict[name] = { lat, lon };
     }
 
-    // 2. 取得台北市即時雨量資料
-    let tpeRes = await fetch(proxyTaipei);
-    if (!tpeRes.ok) {
-      console.warn(`主要代理伺服器失敗 (狀態碼: ${tpeRes.status})，嘗試使用備用伺服器...`);
-      // 遇到 408 Timeout 或其他錯誤時，嘗試使用備用的 allorigins 代理伺服器
-      tpeRes = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(taipeiApiUrl));
-      if (!tpeRes.ok) throw new Error(`台北市 API 請求失敗 (狀態碼: ${tpeRes.status})`);
+    // 2. 取得台北市即時雨量資料 (需透過 Proxy 避開 CORS)
+    // 準備三個不同的免費 Proxy，如果一個失敗就自動換下一個
+    let proxies = [
+      'https://corsproxy.io/?',
+      'https://api.allorigins.win/raw?url=',
+      'https://api.codetabs.com/v1/proxy?quest='
+    ];
+    
+    let tpeJson = null;
+    for (let proxy of proxies) {
+      try {
+        console.log(`嘗試透過 ${proxy} 抓取台北市 API...`);
+        let tpeRes = await fetch(proxy + encodeURIComponent(taipeiApiUrl));
+        if (!tpeRes.ok) throw new Error(`狀態碼: ${tpeRes.status}`);
+        
+        let tpeText = await tpeRes.text();
+        // 檢查是否為合法 JSON (避免代理伺服器回傳純文字錯誤網頁如 Oops...)
+        if (!tpeText.trim().startsWith('[') && !tpeText.trim().startsWith('{')) {
+           throw new Error(`回傳的不是有效 JSON: ${tpeText.substring(0, 30)}...`);
+        }
+        
+        tpeJson = JSON.parse(tpeText);
+        console.log('台北市 API 抓取成功！');
+        break; // 成功就跳出迴圈
+      } catch (err) {
+        console.warn(`代理伺服器 ${proxy} 失敗: ${err.message}`);
+      }
     }
-    let tpeJson = await tpeRes.json();
+    
+    if (!tpeJson) throw new Error("所有代理伺服器皆無法抓取台北市 API。");
+
     let stationsTpe = Array.isArray(tpeJson) ? tpeJson : (tpeJson.data || tpeJson.list || []);
 
     // 3. 根據測站名稱合併資料
