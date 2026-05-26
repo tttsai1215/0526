@@ -1,93 +1,127 @@
-let rainData = null;
-let scrollY = 0; // 用於滾動畫面顯示大量資料
-
-let mappa;
 let myMap;
 let canvas;
+let rainData = [];
 
+// 初始化 Mappa，指定使用 Leaflet 作為圖資引擎
+const mappa = new Mappa('Leaflet');
+
+// 地圖初始設定 (聚焦於臺北市中心)
 const options = {
-  lat: 25.0478, // 台北市中心緯度
-  lng: 121.5319, // 台北市中心經度
+  lat: 25.0330,
+  lng: 121.5654,
   zoom: 12,
-  style: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" // 使用 OpenStreetMap 圖資
+  style: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
 };
 
+// 原始 API 網址
+const targetApiUrl = 'https://wic.gov.taipei/OpenData/API/Rain/Get?stationNo=&loginId=open_rain&dataKey=85452C1D';
+
+// 設定 CORS 代理伺服器
+// 這裡使用 allorigins，它會代理請求並補上 Access-Control-Allow-Origin: * 標頭
+const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(targetApiUrl);
+
 function setup() {
-  // 採用全螢幕畫布
+  // 設定全螢幕畫布
   canvas = createCanvas(windowWidth, windowHeight);
   
-  // 初始化 Mappa 並使用 Leaflet 作為地圖引擎
-  mappa = new Mappa('Leaflet');
+  // 建立地圖實體
   myMap = mappa.tileMap(options);
-  myMap.overlay(canvas); // 將 p5.js 畫布疊加在地圖上
-
-  textSize(16);
-  textAlign(LEFT, TOP);
+  myMap.overlay(canvas); // 將 p5 畫布疊加在地圖上方
   
-  // 呼叫非同步函式取得資料
+  // 啟動 API 資料抓取
   fetchRainData();
+
+  // 綁定事件：當地圖被拖曳或縮放時，重新繪製測站標點
+  myMap.onChange(drawRainStations);
 }
 
 function draw() {
-  // 清除背景，變成透明以顯示底層的地圖
-  clear();
-  fill(0); // 文字設為黑色
-  stroke(255); // 加上白色邊框，讓文字在地圖上更清晰
-  strokeWeight(2);
-  
-  if (!rainData) {
-    text("資料載入中，請稍候...", 20, 20);
-    return;
-  }
-  
-  if (rainData.error) {
-    text(rainData.error, 20, 20);
-    return;
-  }
+  // 在 Mappa 的架構下，畫面更新主要由 onChange 觸發 drawRainStations 來處理
+  // 這裡不需要在 draw 迴圈中持續刷新
+}
 
-  text("台北市即時雨量資料 (使用 Proxy 取得)", 20, 20);
+// 取得 API 資料
+function fetchRainData() {
+  fetch(proxyUrl)
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`網路請求失敗: ${response.status}`);
+      }
+      return response.json();
+    })
+    .then(data => {
+      // 臺北市 API 的回傳結構通常會包裝在 data 屬性內
+      // 檢查結構並賦值
+      if (data && data.data) {
+        rainData = data.data;
+      } else if (Array.isArray(data)) {
+        rainData = data;
+      }
+      console.log('成功取得雨量資料:', rainData);
+      
+      // 資料取得後觸發首次繪圖
+      drawRainStations();
+    })
+    .catch(error => {
+      console.error('抓取 API 資料時發生錯誤:', error);
+    });
+}
+
+// 繪製測站與雨量資訊
+function drawRainStations() {
+  clear(); // 清除畫布，準備重新繪製
   
-  // 繪製資料內容
-  let yOffset = 60 + scrollY;
+  if (!rainData || rainData.length === 0) return;
   
-  // 判斷回傳的資料結構。如果有多筆測站，通常會以陣列形式放在第一層或 data 屬性內
-  let stations = Array.isArray(rainData) ? rainData : (rainData.data || rainData.list || null);
-  
-  if (stations && Array.isArray(stations)) {
-    for (let i = 0; i < stations.length; i++) {
-      let station = stations[i];
-      // 將單筆資料直接轉為字串顯示，以防屬性名稱與預期不同
-      text(`[測站 ${i + 1}] ${JSON.stringify(station)}`, 20, yOffset, width - 40);
-      yOffset += 40; // 增加間距
+  for (let station of rainData) {
+    // 解析經緯度
+    let lat = parseFloat(station.latitude);
+    let lng = parseFloat(station.longitude);
+    
+    // 如果經緯度無效則跳過此測站
+    if (isNaN(lat) || isNaN(lng)) continue;
+    
+    // 將真實經緯度轉換為畫布上的 X、Y 像素座標
+    const pos = myMap.latLngToPixel(lat, lng);
+    
+    // 取得雨量值 (兼容 API 可能的屬性名稱 rain)
+    let rainAmount = parseFloat(station.rain || 0); 
+    
+    // 依據雨量大小設定圓點半徑
+    let size = map(rainAmount, 0, 50, 15, 60); 
+    size = constrain(size, 15, 60); // 限制最小與最大尺寸
+    
+    // 視覺化樣式設定
+    if (rainAmount > 0) {
+      // 有降雨：顯示藍色半透明圓點
+      fill(0, 112, 255, 180);
+      stroke(0, 80, 200);
+      strokeWeight(2);
+    } else {
+      // 無降雨：顯示灰色半透明圓點
+      fill(150, 150, 150, 150);
+      stroke(100);
+      strokeWeight(1);
     }
-  } else {
-    // 若無法辨識為陣列，直接顯示完整的 JSON 字串
-    text(JSON.stringify(rainData, null, 2), 20, yOffset, width - 40);
+    
+    // 繪製測站圓點
+    ellipse(pos.x, pos.y, size, size);
+    
+    // 繪製文字標籤 (站名與雨量)
+    fill(20);
+    noStroke();
+    textAlign(CENTER, BOTTOM);
+    textSize(14);
+    textStyle(BOLD);
+    
+    // 若沒有 stationName，則顯示為 "測站"
+    let stationName = station.stationName || "測站";
+    text(`${stationName}\n${rainAmount} mm`, pos.x, pos.y - (size / 2) - 5);
   }
 }
 
-async function fetchRainData() {
-  const apiUrl = 'https://wic.gov.taipei/OpenData/API/Rain/Get?stationNo=&loginId=open_rain&dataKey=85452C1D';
-  
-  // 使用公共的 CORS 代理伺服器 (CORS Proxy)
-  // 代理伺服器會幫你去台北市政府的 API 拿取資料（伺服器對伺服器不會有 CORS 限制），然後再加上 Access-Control-Allow-Origin: * 的標頭，把資料回傳給你的瀏覽器。
-  const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(apiUrl);
-  
-  try {
-    const response = await fetch(proxyUrl, { method: 'GET' });
-    rainData = await response.json();
-  } catch (error) {
-    console.error('取得資料失敗:', error);
-    rainData = { error: '無法取得即時雨量資料，請檢查網路狀態或代理伺服器。' };
-  }
-}
-
+// 確保視窗縮放時，畫布與地圖能同步調整
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
-}
-
-function mouseWheel(event) {
-  // 使用滑鼠滾輪來上下滑動查看資料
-  scrollY -= event.delta;
-  if (scrollY > 0) scrollY = 0;
+  myMap.overlay(canvas);
 }
