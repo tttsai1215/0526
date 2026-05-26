@@ -11,6 +11,33 @@ const options = {
   style: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
 };
 
+// 台北市主要測站經緯度座標對照表 (用於地圖定位)
+const stationCoords = {
+  "湖田國小": { lat: 25.1528, lon: 121.5323 },
+  "大屯國小": { lat: 25.1741, lon: 121.4925 },
+  "桃源國中": { lat: 25.1397, lon: 121.4914 },
+  "北投國小": { lat: 25.1321, lon: 121.5005 },
+  "陽明高中": { lat: 25.0945, lon: 121.5148 },
+  "太平國小": { lat: 25.0610, lon: 121.5111 },
+  "民生國中": { lat: 25.0602, lon: 121.5606 },
+  "中正國中": { lat: 25.0336, lon: 121.5201 },
+  "三興國小": { lat: 25.0303, lon: 121.5583 },
+  "格致國中": { lat: 25.1362, lon: 121.5387 },
+  "平等國小": { lat: 25.1278, lon: 121.5714 },
+  "至善國中": { lat: 25.1014, lon: 121.5489 },
+  "碧湖國小": { lat: 25.0811, lon: 121.5878 },
+  "東湖國小": { lat: 25.0689, lon: 121.6169 },
+  "瑠公國中": { lat: 25.0372, lon: 121.5847 },
+  "舊莊國小": { lat: 25.0402, lon: 121.6186 },
+  "博嘉國小": { lat: 25.0000, lon: 121.5886 },
+  "北政國中": { lat: 24.9861, lon: 121.5786 },
+  "長安國小": { lat: 25.0489, lon: 121.5283 },
+  "萬華國中": { lat: 25.0278, lon: 121.4986 },
+  "台灣大學(新)": { lat: 25.0175, lon: 121.5397 },
+  "雙園": { lat: 25.0232, lon: 121.4925 },
+  "中洲": { lat: 25.1235, lon: 121.4608 }
+};
+
 function setup() {
   canvas = createCanvas(windowWidth, windowHeight);
   
@@ -165,9 +192,21 @@ async function fetchRainData() {
       let normName = normalizeName(name);
       let rainAmount = parseFloat(st.rain || 0);
       
-      // 優先採用 CWA 氣象署的精確經緯度，如果沒有則退回使用台北市資料庫附帶的經緯度
-      let lat = coordsDict[normName] ? coordsDict[normName].lat : parseFloat(st.latitude);
-      let lng = coordsDict[normName] ? coordsDict[normName].lon : parseFloat(st.longitude);
+      // 優先採用自訂的 stationCoords，再來是 CWA 氣象署，如果都沒有才退回使用台北市資料庫附帶的經緯度
+      let lat, lng;
+      if (stationCoords[name]) {
+        lat = stationCoords[name].lat;
+        lng = stationCoords[name].lon;
+      } else if (stationCoords[normName]) {
+        lat = stationCoords[normName].lat;
+        lng = stationCoords[normName].lon;
+      } else if (coordsDict[normName]) {
+        lat = coordsDict[normName].lat;
+        lng = coordsDict[normName].lon;
+      } else {
+        lat = parseFloat(st.latitude);
+        lng = parseFloat(st.longitude);
+      }
       
       // 如果有合法的座標，才加入渲染清單
       if (!isNaN(lat) && !isNaN(lng)) {
