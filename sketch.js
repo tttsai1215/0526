@@ -127,6 +127,17 @@ async function fetchRainData() {
     // 建立一個對照字典，用測站名稱找出 CWA 提供的準確座標
     let coordsDict = {};
     for (let s of stationsCwa) {
+      // 確保只抓取「臺北市」的測站
+      let countyName = s.GeoInfo ? s.GeoInfo.CountyName : '';
+      // 舊版 API 格式相容
+      if (!countyName && s.parameter) {
+        let cityParam = s.parameter.find(p => p.parameterName === 'CITY');
+        if (cityParam) countyName = cityParam.parameterValue;
+      }
+      if (normalizeName(countyName) !== '台北市') {
+        continue;
+      }
+      
       let name = normalizeName(s.StationName || s.locationName);
       let lat, lon;
       // 解析 CWA 最新的 JSON 格式
