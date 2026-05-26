@@ -141,9 +141,10 @@ async function fetchRainData() {
   const taipeiApiUrl = 'https://wic.gov.taipei/OpenData/API/Rain/Get?stationNo=&loginId=open_rain&dataKey=85452C1D';
   const cwaApiUrl = 'https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0002-001?Authorization=rdec-key-123-45678-011121314';
   
-  // 使用 AllOrigins Proxy 避開 CORS 限制
-  const proxyTaipei = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(taipeiApiUrl);
-  const proxyCwa = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(cwaApiUrl);
+  // 台北市 API 需要透過 Proxy 避開 CORS 限制 (改用 corsproxy.io)
+  const proxyTaipei = 'https://corsproxy.io/?' + encodeURIComponent(taipeiApiUrl);
+  // 氣象署 API 本身已支援 CORS，可直接呼叫，不需 Proxy！
+  const proxyCwa = cwaApiUrl;
 
   try {
     // 1. 取得中央氣象署的經緯度資料
